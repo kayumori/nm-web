@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeuMind</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" type="image/png" href="favicon.png">
+</head>
+<body>
+
+
+<!-- ===== ログイン (公開URL用) ===== -->
+<div id="login-screen" class="screen">
+  <div class="setup-card">
+    <h1>NeuMind</h1>
+    <p class="lead">パスワードを入力してください。</p>
+    <div class="token-row">
+      <input id="login-input" type="password" placeholder="パスワード" autocomplete="current-password">
+      <button id="login-btn" class="primary-btn">ログイン</button>
+    </div>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ===== セットアップ ===== -->
+<div id="setup-screen" class="screen">
+  <div class="setup-card">
+    <h1>NeuMind</h1>
+    <div id="setup-step1">
+    <p class="lead">最初に一度だけ、Notionとの接続設定が必要です。</p>
+    <ol class="setup-steps">
+      <li><span class="num">1</span><div>配布されたテンプレートページを自分のNotionに複製する(ページ右上の「複製」)</div></li>
+      <li><span class="num">2</span><div><a href="https://www.notion.so/profile/integrations" target="_blank">notion.so/profile/integrations</a> を開き、「新しいインテグレーション」を作成(名前は「マインドマップ」など・関連ワークスペースを選択)</div></li>
+      <li><span class="num">3</span><div>作成後に表示される「内部インテグレーションシークレット」(<code>ntn_…</code>)をコピー</div></li>
+      <li><span class="num">4</span><div>複製したテンプレートページ右上の <code>…</code> → 「接続」→ 作成したインテグレーションを追加</div></li>
+      <li><span class="num">5</span><div>下にシークレットを貼り付けて「接続」</div></li>
+    </ol>
+    <div class="token-row">
+      <input id="token-input" type="password" placeholder="ntn_xxxxxxxxxxxx" autocomplete="off">
+      <button id="token-save" class="primary-btn">接続</button>
+    </div>
+    <div id="setup-error"></div>
+    </div>
+
+    <div id="setup-step2" style="display:none">
+      <p class="lead">接続できました。</p>
+      <p id="setup2-status" style="font-size:13.5px"></p>
+      <div id="setup2-error" style="line-height:1.7"></div>
+      <button id="setup-retry" class="primary-btn" style="width:100%;margin-top:14px;display:none">もう一度確認する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ファイル一覧 ===== -->
+<div id="files-screen" class="screen">
+  <div class="files-wrap">
+    <div class="files-head">
+      <div id="breadcrumb"><h1>NeuMind</h1></div>
+      <span class="files-hint">右クリックで新規作成</span>
+    </div>
+    <div id="file-grid" class="file-grid"><div class="spinner"></div></div>
+    <div id="recent-sec"></div>
+    <div id="files-footer"></div>
+  </div>
+</div>
+
+<!-- ===== エディタ ===== -->
+<div id="editor-screen" class="screen">
+  <div id="toolbar">
+    <button class="tb-btn" id="btn-back" title="ファイル一覧へ">← 一覧</button>
+    <input id="map-title" value="">
+    <span class="sep"></span>
+    <button class="tb-btn" id="btn-add-child" title="子トピックを追加 (Tab)">＋ 子トピック</button>
+    <button class="tb-btn" id="btn-add-sibling" title="同じ階層に追加 (Enter)">＋ トピック</button>
+    <button class="tb-btn" id="btn-delete" title="削除 (Delete)">削除</button>
+    <span class="sep"></span>
+    <button class="tb-btn" id="btn-share" title="共有リンクを発行">共有</button>
+    <button class="tb-btn" id="btn-help" title="ショートカット">ヘルプ</button>
+    <div id="sync-status"><span class="dot"></span><span id="sync-text">保存済み</span></div>
+    <button class="tb-btn" id="btn-panel" title="設定パネルの表示/非表示">パネル</button>
+  </div>
+
+  <div id="canvas">
+    <div id="world">
+      <svg id="edges"></svg>
+      <div id="nodes-layer"></div>
+    </div>
+  </div>
+
+  <div id="zoom-ctrl">
+    <button id="zoom-out" title="縮小">−</button>
+    <span id="zoom-pct">100%</span>
+    <button id="zoom-in" title="拡大">＋</button>
+    <button id="zoom-fit" title="全体表示">⤢</button>
+  </div>
+
+  <div id="inspector">
+    <div class="insp-tabs">
+      <button class="insp-tab" id="tab-design">デザイン</button>
+      <button class="insp-tab" id="tab-node">トピック</button>
+    </div>
+
+    <div id="insp-design">
+      <h3>レイアウト</h3>
+      <div class="seg" id="seg-layout"></div>
+      <h3>テーマ</h3>
+      <div class="theme-grid" id="theme-grid"></div>
+      <h3>背景</h3>
+      <div class="seg" id="seg-bg"></div>
+    </div>
+
+    <div id="insp-node">
+      <h3>リンク</h3>
+      <input id="insp-link" type="url" placeholder="https://…">
+      <h3>色</h3>
+      <div class="color-row" id="color-row"></div>
+      <h3>画像</h3>
+      <div class="insp-row">
+        <button class="insp-btn" id="insp-img-add">追加 / 貼り付け⌘V</button>
+        <button class="insp-btn danger" id="insp-img-del">削除</button>
+      </div>
+      <input type="file" id="img-file" accept="image/*" hidden>
+      <h3>ノート</h3>
+      <textarea id="insp-note" placeholder="メモを書く…"></textarea>
+      <a id="insp-notion-link" href="#" target="_blank">Notionでページを開く ↗</a>
+    </div>
+  </div>
+
+  <div id="help-pop">
+    <h3>キーボードショートカット</h3>
+    <table>
+      <tr><td><kbd>Tab</kbd></td><td>子トピックを追加</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>同じ階層にトピック追加</td></tr>
+      <tr><td><kbd>スペース</kbd> / ダブルクリック</td><td>テキスト編集</td></tr>
+      <tr><td><kbd>Delete</kbd></td><td>トピック削除</td></tr>
+      <tr><td><kbd>矢印キー</kbd></td><td>選択の移動</td></tr>
+      <tr><td><kbd>⌘Z</kbd></td><td>元に戻す</td></tr>
+      <tr><td><kbd>⌘C</kbd> / <kbd>⌘V</kbd></td><td>トピックのコピー / 貼り付け</td></tr>
+      <tr><td><kbd>⌘V</kbd></td><td>画像を貼り付け</td></tr>
+      <tr><td>画像をクリック</td><td>拡大表示</td></tr>
+      <tr><td>ドラッグ</td><td>移動・つなぎ替え</td></tr>
+      <tr><td>空きスペースへドラッグ</td><td>フローティングトピック</td></tr>
+      <tr><td><kbd>⌘</kbd> + スクロール</td><td>ズーム</td></tr>
+      <tr><td>背景ドラッグ</td><td>画面移動</td></tr>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="drag-ghost" style="display:none"></div>
+<div id="ctx-menu" style="display:none"></div>
+
+<!-- 画像の拡大表示 -->
+<div id="lightbox" style="display:none">
+  <img id="lb-img" alt="">
+  <div class="lb-actions">
+    <button class="lb-btn" id="lb-download">ダウンロード</button>
+    <button class="lb-btn" id="lb-replace">置き換え</button>
+    <button class="lb-btn danger" id="lb-delete">削除</button>
+    <button class="lb-btn" id="lb-close">閉じる</button>
+  </div>
+</div>
+
+
+<!-- 共有リンク -->
+<div id="share-dialog" style="display:none">
+  <div class="nd-box share-box">
+    <h3>このマインドマップを共有</h3>
+    <p class="share-lead">リンクを知っている人が開けます。渡す相手にNotionのアカウントは要りません。</p>
+
+    <div class="share-row" data-role="view">
+      <div class="share-label"><strong>閲覧のみ</strong><span>見るだけ。編集はできません</span></div>
+      <div class="share-link"><input type="text" readonly><button class="insp-btn share-copy">コピー</button></div>
+      <div class="share-actions">
+        <button class="insp-btn share-create">リンクを作る</button>
+        <button class="insp-btn danger share-revoke">取り消す</button>
+      </div>
+    </div>
+
+    <div class="share-row" data-role="edit">
+      <div class="share-label"><strong>編集もできる</strong><span>相手の編集がそのままNotionに反映されます</span></div>
+      <div class="share-link"><input type="text" readonly><button class="insp-btn share-copy">コピー</button></div>
+      <div class="share-actions">
+        <button class="insp-btn share-create">リンクを作る</button>
+        <button class="insp-btn danger share-revoke">取り消す</button>
+      </div>
+    </div>
+
+    <div class="nd-actions">
+      <button id="share-close" class="primary-btn">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 名前入力ダイアログ (IME対応) -->
+<div id="name-dialog" style="display:none">
+  <div class="nd-box">
+    <h3 id="nd-title"></h3>
+    <input id="nd-input" type="text" autocomplete="off">
+    <div class="nd-actions">
+      <button id="nd-cancel" class="insp-btn">キャンセル</button>
+      <button id="nd-ok" class="primary-btn">OK</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
