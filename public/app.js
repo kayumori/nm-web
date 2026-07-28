@@ -4,7 +4,11 @@
 // ============================================================
 // バックエンド (Notion / デモ)
 // ============================================================
-const DEMO = localStorage.getItem('mm_demo') === '1';
+const IS_EXT = location.protocol === 'chrome-extension:';
+// 拡張版はNotion直結のためデモモードを持たない。
+// (以前のバージョンでフラグだけ残ってしまった人のために掃除もする)
+if (IS_EXT) localStorage.removeItem('mm_demo');
+const DEMO = !IS_EXT && localStorage.getItem('mm_demo') === '1';
 const PARAMS = new URLSearchParams(location.search);
 // 共有リンク: /?s=<キー> の1本だけ。閲覧か編集かはサーバーが判定する
 const SHARE_KEY = PARAMS.get('s') || null;
@@ -123,7 +127,6 @@ const demoBackend = (() => {
 })();
 
 // Chrome拡張版: ローカルサーバーなしでNotion APIと直接通信 (host_permissionsでCORS回避)
-const IS_EXT = location.protocol === 'chrome-extension:';
 // 拡張版はサーバーを介さずNotionを直接叩くため、共有リンク機能は使えない
 if (IS_EXT) document.body.classList.add('ext');
 
@@ -366,6 +369,8 @@ const extBackend = (() => {
 })();
 
 const api = IS_EXT ? extBackend : (DEMO ? demoBackend : notionBackend);
+// トークン保存やDB検出などの設定操作は、デモ中でも本物のバックエンドに対して行う
+const setupApi = IS_EXT ? extBackend : notionBackend;
 
 // ============================================================
 // 状態
@@ -2074,8 +2079,10 @@ $('#token-save').addEventListener('click', async () => {
   $('#token-save').disabled = true;
   err.textContent = '';
   try {
-    const r = await api.saveToken(token);
+    const r = await setupApi.saveToken(token);
     if (r.ok) {
+      // デモで試していた場合はデモを抜けて本番として開き直す
+      if (DEMO) { localStorage.removeItem('mm_demo'); location.reload(); return; }
       const st = await api.status();
       if (st.ok) {
         toast('接続しました!');
@@ -2107,7 +2114,7 @@ async function showDbSetup() {
   retry.style.display = 'none';
   status.textContent = 'テンプレートのデータベースを探しています…';
   try {
-    const r = await api.setupDetect();
+    const r = await setupApi.setupDetect();
     if (r.ok) {
       toast('セットアップが完了しました!');
       openFilesScreen();
@@ -2125,6 +2132,7 @@ $('#setup-retry').addEventListener('click', showDbSetup);
 
 // デモリンクをセットアップ画面に追加
 (() => {
+  if (IS_EXT) return; // 拡張版にデモモードはない
   const card = document.querySelector('#setup-screen .setup-card');
   const p = document.createElement('p');
   p.style.cssText = 'margin-top:16px;font-size:12.5px;color:var(--sub)';
