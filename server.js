@@ -313,15 +313,38 @@ async function resolveShare(key) {
 
   let value = null;
   for (const role of ['edit', 'view']) {
-    const pages = await queryAll(FILES_DB(), {
-      property: SHARE_PROPS[role],
-      rich_text: { equals: key },
-    });
+    let pages;
+    try {
+      pages = await queryAll(FILES_DB(), {
+        property: SHARE_PROPS[role],
+        rich_text: { equals: key },
+      });
+    } catch (e) {
+      // 列自体が無い = まだ一度も共有していないNotion。作ってから続ける
+      if (e.status === 400) { await ensureShareProps(); pages = []; }
+      else throw e;
+    }
     const pg = pages.find(p => !p.archived && !p.in_trash);
     if (pg) { value = { fileId: pg.id, role }; break; }
   }
   shareCache.set(key, { value, at: Date.now() });
   return value;
+}
+
+// 共有キーの列が無いNotion(古いテンプレートを複製済みの人)には、必要になった時に自動で作る
+let sharePropsReady = false;
+async function ensureShareProps() {
+  if (sharePropsReady) return;
+  const db = await notion(`/databases/${FILES_DB()}`);
+  const missing = {};
+  for (const name of Object.values(SHARE_PROPS)) {
+    if (!db.properties[name]) missing[name] = { rich_text: {} };
+  }
+  if (Object.keys(missing).length) {
+    await notion(`/databases/${FILES_DB()}`, 'PATCH', { properties: missing });
+    console.log('共有キーの列を追加しました:', Object.keys(missing).join(', '));
+  }
+  sharePropsReady = true;
 }
 
 function shareKeysOf(pg) {
@@ -445,6 +468,7 @@ async function handleApi(req, res, url) {
   // --- 共有リンクの発行・取り消し(所有者のみ) ---
   if (parts[1] === 'share' && parts[2] && parts[2] !== 'resolve') {
     const fileId = parts[2];
+    await ensureShareProps();
     if (method === 'GET') {
       const pg = await notion(`/pages/${fileId}`);
       return json(res, 200, { keys: shareKeysOf(pg), base: publicBase(req) });
