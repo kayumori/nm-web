@@ -171,6 +171,8 @@ input, textarea { font-family: inherit; }
   padding: 14px 24px; border-radius: 14px;
 }
 .node.depth-1 { font-weight: 600; }
+/* 白いトピックは背景に溶けるので枠線を出す(選択時は選択枠が優先) */
+.node.white-bg { border-color: #dcdce2; }
 .node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,112,255,.22), 0 1px 4px rgba(0,0,0,.1); }
 .node.editing { cursor: text; }
 .node.drag-source { opacity: .35; }

@@ -906,10 +906,8 @@ function buildNodeDom(n) {
   } else {
     dom.style.background = '#fff'; dom.style.color = 'var(--text)';
   }
-  // 白は背景に溶けるので、うっすら枠線を出す
-  if (isNearWhite(dom.style.backgroundColor) || isNearWhite(n.color)) {
-    dom.style.borderColor = '#dcdce2';
-  }
+  // 白は背景に溶けるので、うっすら枠線を出す(選択中の枠を邪魔しないようCSS側で制御)
+  dom.classList.toggle('white-bg', isNearWhite(dom.style.backgroundColor) || isNearWhite(n.color));
   return dom;
 }
 
