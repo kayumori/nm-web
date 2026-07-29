@@ -273,6 +273,10 @@ body.readonly #map-title { pointer-events: none; }
 }
 .color-sw.selected { border-color: var(--text); }
 .color-sw.none { background: #fff !important; border: 2px dashed #c9c9d0; position: relative; }
+/* 白は台紙が白いので枠線を出す */
+.color-sw.white { box-shadow: inset 0 0 0 1px #d5d5dc; }
+/* リンクアイコンはクリックできることを示す */
+.node .node-link { cursor: pointer; }
 .insp-row { display: flex; gap: 8px; }
 .insp-btn {
   flex: 1; border: 1px solid var(--border); background: #fff; border-radius: 8px;

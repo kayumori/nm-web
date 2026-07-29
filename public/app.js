@@ -808,6 +808,14 @@ function layout() {
 // ============================================================
 // 描画
 // ============================================================
+// 白はテーマに関係なく常に選べるようにする
+const WHITE = '#ffffff';
+function isNearWhite(hex) {
+  if (!hex || hex[0] !== '#') return false;
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return r > 235 && g > 235 && b > 235;
+}
+
 function textColorFor(hex) {
   if (!hex || hex[0] !== '#') return '#fff';
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
@@ -871,7 +879,8 @@ function buildNodeDom(n) {
     row.appendChild(txt);
     if (n.link) {
       const a = document.createElement('a');
-      a.className = 'node-link'; a.href = n.link; a.target = '_blank'; a.title = n.link;
+      a.className = 'node-link'; a.href = n.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.title = n.link + '\n(クリックで開く)';
       a.innerHTML = ICON.link;
       a.addEventListener('click', (e) => e.stopPropagation());
       row.appendChild(a);
@@ -896,6 +905,10 @@ function buildNodeDom(n) {
     dom.style.background = n.color; dom.style.color = textColorFor(n.color);
   } else {
     dom.style.background = '#fff'; dom.style.color = 'var(--text)';
+  }
+  // 白は背景に溶けるので、うっすら枠線を出す
+  if (isNearWhite(dom.style.backgroundColor) || isNearWhite(n.color)) {
+    dom.style.borderColor = '#dcdce2';
   }
   return dom;
 }
@@ -980,7 +993,8 @@ function drawEdges(vis) {
       const dx = (ex - sx) * 0.55;
       d = `M ${sx} ${sy} C ${sx + dx} ${sy}, ${ex - dx} ${ey}, ${ex} ${ey}`;
     }
-    paths.push(`<path d="${d}" stroke="${color}" stroke-width="${width}" fill="none" stroke-linecap="round"/>`);
+    const stroke = (isNearWhite(color) && (S.file && S.file.bg) !== 'ブラック') ? '#d5d5dc' : color;
+    paths.push(`<path d="${d}" stroke="${stroke}" stroke-width="${width}" fill="none" stroke-linecap="round"/>`);
   }
   el.edges.innerHTML = paths.join('');
 }
@@ -1050,6 +1064,8 @@ let drag = null; // {id, startX, startY, moved, target, zone} | {pan:true,...}
 
 el.canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
+  // リンクアイコンはブラウザの既定動作(リンクを開く)に任せる
+  if (e.target.closest('.node-link')) return;
   const nodeDom = e.target.closest('.node');
   if (nodeDom) {
     const id = nodeDom.dataset.id;
@@ -1131,6 +1147,7 @@ el.canvas.addEventListener('pointerup', (e) => {
 
 el.canvas.addEventListener('dblclick', (e) => {
   if (RO || S.editing) return;
+  if (e.target.closest('.node-link')) return; // リンクを開く操作を邪魔しない
   if (e.target.closest('.node-img')) return; // 画像は拡大表示が優先
   const nodeDom = e.target.closest('.node');
   if (nodeDom) startEdit(nodeDom.dataset.id);
@@ -1541,10 +1558,11 @@ function updateInspector() {
   noneBtn.title = '自動';
   noneBtn.addEventListener('click', () => { updateNode(S.sel, { color: null }); render(); updateInspector(); });
   row.appendChild(noneBtn);
-  for (const c of theme().palette) {
+  for (const c of [...theme().palette, WHITE]) {
     const b = document.createElement('button');
-    b.className = 'color-sw' + (n.color === c ? ' selected' : '');
+    b.className = 'color-sw' + (c === WHITE ? ' white' : '') + (n.color === c ? ' selected' : '');
     b.style.background = c;
+    if (c === WHITE) b.title = '白';
     b.addEventListener('click', () => { updateNode(S.sel, { color: c }); render(); updateInspector(); });
     row.appendChild(b);
   }
