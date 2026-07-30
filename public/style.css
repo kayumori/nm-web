@@ -8,7 +8,7 @@
   --accent: #3370ff;
   --root-fill: #3370ff;
 }
-html, body { height: 100%; overflow: hidden; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
   font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
   background: var(--bg);
@@ -146,6 +146,8 @@ input, textarea { font-family: inherit; }
 
 #canvas {
   position: absolute; inset: 52px 0 0 0; overflow: hidden; cursor: default;
+  /* iPad等のタッチ操作でドラッグがページのスクロールや引っ張って更新にならないようにする */
+  touch-action: none;
   background:
     radial-gradient(circle, #dcdce2 1px, transparent 1px);
   background-size: 24px 24px;
@@ -177,6 +179,7 @@ input, textarea { font-family: inherit; }
 .node.white-bg { border-color: #dcdce2; }
 #canvas .node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,112,255,.22), 0 1px 4px rgba(0,0,0,.1); }
 .node.editing { cursor: text; }
+#canvas .node.editing, #canvas .node.editing .node-text { touch-action: auto; }
 .node.drag-source { opacity: .35; }
 /* ドロップ先の表示: 中に入れる=枠が緑 / 上下に並べる=その側の縁が緑に太くなる */
 #canvas .node.drop-child { border-color: #30bd66; box-shadow: 0 0 0 3px rgba(48,189,102,.35); }

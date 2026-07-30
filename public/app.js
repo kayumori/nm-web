@@ -1129,6 +1129,19 @@ el.canvas.addEventListener('pointermove', (e) => {
   }
 });
 
+// タッチ操作でドラッグ中は、ブラウザ側のスクロール等を起こさせない
+el.canvas.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
+
+// 途中でブラウザに操作を取られた場合は、表示を元に戻すだけにする
+el.canvas.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  el.canvas.classList.remove('panning');
+  clearDropHints();
+  el.ghost.style.display = 'none';
+  el.layer.querySelector(`[data-id="${CSS.escape(drag.id || '')}"]`)?.classList.remove('drag-source');
+  drag = null;
+});
+
 el.canvas.addEventListener('pointerup', (e) => {
   if (!drag) return;
   el.canvas.classList.remove('panning');
