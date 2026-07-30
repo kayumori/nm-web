@@ -816,6 +816,10 @@ function isNearWhite(hex) {
   return r > 235 && g > 235 && b > 235;
 }
 
+// 画像の読み込み後に一度だけ再レイアウトするための記録
+const imgSized = new Set();
+let imgRelayoutTimer = null;
+
 function textColorFor(hex) {
   if (!hex || hex[0] !== '#') return '#fff';
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
@@ -861,6 +865,18 @@ function buildNodeDom(n) {
       img.className = 'node-img';
       img.src = n.image.url;
       img.draggable = false;
+      // 画像が読み込まれると高さが変わるので、一度だけ再レイアウトする
+      const sizeKey = n.id + '|' + n.image.url;
+      img.onload = () => {
+        if (imgSized.has(sizeKey)) return;
+        imgSized.add(sizeKey);
+        clearTimeout(imgRelayoutTimer);
+        imgRelayoutTimer = setTimeout(function relayout() {
+          // 編集中・ドラッグ中は再描画で操作を邪魔しないよう後回しにする
+          if (S.editing || drag) { imgRelayoutTimer = setTimeout(relayout, 200); return; }
+          render();
+        }, 60);
+      };
       img.onerror = async () => {
         if (img.dataset.retried || isTemp(n.id) || api.name === 'demo') return;
         img.dataset.retried = '1';
@@ -1226,25 +1242,34 @@ function clearDropHints() {
 }
 
 function findDropTarget(clientX, clientY) {
-  const w = toWorld(clientX, clientY);
   const excluded = new Set(subtreeIds(drag.id));
-  const root = mainRoot();
-  for (const [id, g] of S.geo) {
+  const margin = 14 * S.zoom;
+  // 記録済みの座標ではなく実際の描画位置で判定する
+  // (画像入りトピックは読み込みで高さが変わるため、記録値だと別の場所に入ってしまう)
+  let best = null;
+  for (const id of S.geo.keys()) {
     if (excluded.has(id) || !S.nodes.has(id)) continue;
     const dom = el.layer.querySelector(`[data-id="${CSS.escape(id)}"]`);
     if (!dom) continue;
-    const top = g.cy - g.h / 2, bottom = g.cy + g.h / 2;
-    const margin = 14;
-    if (w.x >= g.x - margin && w.x <= g.x + g.w + margin && w.y >= top - margin && w.y <= bottom + margin) {
-      const n = S.nodes.get(id);
-      const canSibling = n.parentId != null;
-      const rel = (w.y - top) / g.h;
-      if (canSibling && rel < 0.25) return { id, zone: 'before' };
-      if (canSibling && rel > 0.75) return { id, zone: 'after' };
-      return { id, zone: 'child' };
-    }
+    const r = dom.getBoundingClientRect();
+    if (!r.height) continue;
+    const inside = clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    const near = clientX >= r.left - margin && clientX <= r.right + margin
+              && clientY >= r.top - margin && clientY <= r.bottom + margin;
+    if (!near) continue;
+    // 重なっている場合は、実際に触れているもの・小さいものを優先する
+    const score = (inside ? 0 : 1) * 1e9 + r.width * r.height;
+    if (!best || score < best.score) best = { id, rect: r, score };
   }
-  return null;
+  if (!best) return null;
+
+  const n = S.nodes.get(best.id);
+  const canSibling = n.parentId != null;
+  // 上下の判定帯は、背の高いトピック(画像入り)でも端の一定幅に収める
+  const band = Math.min(best.rect.height * 0.25, 26 * S.zoom);
+  if (canSibling && clientY < best.rect.top + band) return { id: best.id, zone: 'before' };
+  if (canSibling && clientY > best.rect.bottom - band) return { id: best.id, zone: 'after' };
+  return { id: best.id, zone: 'child' };
 }
 
 function applyDrop(id, t) {

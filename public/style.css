@@ -171,16 +171,22 @@ input, textarea { font-family: inherit; }
   padding: 14px 24px; border-radius: 14px;
 }
 .node.depth-1 { font-weight: 600; }
+/* 影を使う指定には #canvas を付ける。背景ブラック用の #canvas.bg-black .node が
+   同じ優先度で影を打ち消してしまうため */
 /* 白いトピックは背景に溶けるので枠線を出す(選択時は選択枠が優先) */
 .node.white-bg { border-color: #dcdce2; }
-.node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,112,255,.22), 0 1px 4px rgba(0,0,0,.1); }
+#canvas .node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,112,255,.22), 0 1px 4px rgba(0,0,0,.1); }
 .node.editing { cursor: text; }
 .node.drag-source { opacity: .35; }
 /* ドロップ先の表示: 中に入れる=枠が緑 / 上下に並べる=その側の影が濃くなる */
-.node.drop-child { border-color: #30bd66; box-shadow: 0 0 0 3px rgba(48,189,102,.3); }
+#canvas .node.drop-child { border-color: #30bd66; box-shadow: 0 0 0 3px rgba(48,189,102,.35); }
 /* 上下に並べる場合は、その側の影が濃く太くなる */
-.node.drop-before { box-shadow: 0 -9px 16px -3px rgba(48,189,102,.65), 0 1px 4px rgba(0,0,0,.10); }
-.node.drop-after  { box-shadow: 0 9px 16px -3px rgba(48,189,102,.65), 0 1px 4px rgba(0,0,0,.10); }
+#canvas .node.drop-before {
+  box-shadow: 0 -8px 0 -2px rgba(48,189,102,.95), 0 -16px 20px -6px rgba(48,189,102,.9), 0 1px 4px rgba(0,0,0,.10);
+}
+#canvas .node.drop-after {
+  box-shadow: 0 8px 0 -2px rgba(48,189,102,.95), 0 16px 20px -6px rgba(48,189,102,.9), 0 1px 4px rgba(0,0,0,.10);
+}
 .node img.node-img {
   display: block; max-width: 292px; max-height: 240px; border-radius: 6px; margin: 2px auto 6px;
   cursor: zoom-in;
