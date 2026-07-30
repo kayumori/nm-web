@@ -152,7 +152,6 @@ input, textarea { font-family: inherit; }
 }
 #canvas.bg-white { background: #ffffff; }
 #canvas.bg-black { background: #252525; }
-#canvas.bg-black .node { box-shadow: 0 1px 4px rgba(0,0,0,.5); }
 #canvas.bg-black .collapse-btn { background: #2a2a32; border-color: #55555f; color: #ccc; }
 #canvas.panning { cursor: grabbing; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
@@ -162,7 +161,7 @@ input, textarea { font-family: inherit; }
 .node {
   position: absolute; width: max-content; max-width: 320px; min-width: 40px;
   border-radius: 10px; padding: 8px 14px; background: #fff; border: 2px solid transparent;
-  box-shadow: 0 1px 4px rgba(0,0,0,.10); cursor: pointer; user-select: none;
+  cursor: pointer; user-select: none;
   line-height: 1.4; white-space: pre-wrap; word-break: break-word;
 }
 .node .node-text { min-width: 1em; min-height: 1.2em; outline: none; }
@@ -175,17 +174,17 @@ input, textarea { font-family: inherit; }
    同じ優先度で影を打ち消してしまうため */
 /* 白いトピックは背景に溶けるので枠線を出す(選択時は選択枠が優先) */
 .node.white-bg { border-color: #dcdce2; }
-#canvas .node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,112,255,.22), 0 1px 4px rgba(0,0,0,.1); }
+#canvas .node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,112,255,.22); }
 .node.editing { cursor: text; }
 .node.drag-source { opacity: .35; }
 /* ドロップ先の表示: 中に入れる=枠が緑 / 上下に並べる=その側の影が濃くなる */
 #canvas .node.drop-child { border-color: #30bd66; box-shadow: 0 0 0 3px rgba(48,189,102,.35); }
 /* 上下に並べる場合は、その側の影が濃く太くなる */
 #canvas .node.drop-before {
-  box-shadow: 0 -8px 0 -2px rgba(48,189,102,.95), 0 -16px 20px -6px rgba(48,189,102,.9), 0 1px 4px rgba(0,0,0,.10);
+  box-shadow: 0 -8px 0 -2px rgba(48,189,102,.95), 0 -16px 20px -6px rgba(48,189,102,.9);
 }
 #canvas .node.drop-after {
-  box-shadow: 0 8px 0 -2px rgba(48,189,102,.95), 0 16px 20px -6px rgba(48,189,102,.9), 0 1px 4px rgba(0,0,0,.10);
+  box-shadow: 0 8px 0 -2px rgba(48,189,102,.95), 0 16px 20px -6px rgba(48,189,102,.9);
 }
 .node img.node-img {
   display: block; max-width: 292px; max-height: 240px; border-radius: 6px; margin: 2px auto 6px;
