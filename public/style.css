@@ -176,16 +176,11 @@ input, textarea { font-family: inherit; }
 .node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,112,255,.22), 0 1px 4px rgba(0,0,0,.1); }
 .node.editing { cursor: text; }
 .node.drag-source { opacity: .35; }
-/* ドロップ先の表示: 中に入れる=枠が緑 / 上下に並べる=その側に緑のバー */
+/* ドロップ先の表示: 中に入れる=枠が緑 / 上下に並べる=その側の影が濃くなる */
 .node.drop-child { border-color: #30bd66; box-shadow: 0 0 0 3px rgba(48,189,102,.3); }
-.node.drop-before::after, .node.drop-after::after {
-  content: ''; position: absolute; left: -8px; right: -8px; height: 5px;
-  background: #30bd66; border-radius: 3px;
-  box-shadow: 0 0 0 3px rgba(48,189,102,.22);
-  pointer-events: none;
-}
-.node.drop-before::after { top: -9px; }
-.node.drop-after::after { bottom: -9px; }
+/* 上下に並べる場合は、その側の影が濃く太くなる */
+.node.drop-before { box-shadow: 0 -9px 16px -3px rgba(48,189,102,.65), 0 1px 4px rgba(0,0,0,.10); }
+.node.drop-after  { box-shadow: 0 9px 16px -3px rgba(48,189,102,.65), 0 1px 4px rgba(0,0,0,.10); }
 .node img.node-img {
   display: block; max-width: 292px; max-height: 240px; border-radius: 6px; margin: 2px auto 6px;
   cursor: zoom-in;
