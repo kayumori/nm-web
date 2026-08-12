@@ -1,6 +1,9 @@
 {
   "name": "neumind",
   "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy && wrangler triggers deploy"
+  },
   "cloudflare": {
     "bindings": {
       "NOTION_TOKEN": {

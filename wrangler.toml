@@ -3,6 +3,7 @@ main = "src/index.js"
 compatibility_date = "2025-01-01"
 # 設置しただけでURLが使えるようにする(既定では無効で「有効なURLがありません」になる)
 workers_dev = true
+preview_urls = true
 
 [assets]
 directory = "./public"
