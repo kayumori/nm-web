@@ -1,0 +1,19 @@
+{
+  "name": "neumind",
+  "private": true,
+  "description": "Notionをマインドマップとして編集・共有できるアプリ",
+  "cloudflare": {
+    "label": "NeuMind",
+    "products": ["Workers"],
+    "categories": ["productivity"],
+    "docs_url": "https://github.com/kayumori/nm-web",
+    "bindings": {
+      "NOTION_TOKEN": {
+        "description": "Notionの内部インテグレーションシークレット(ntn_ から始まる文字列)"
+      },
+      "OWNER_PASSWORD": {
+        "description": "このアプリにログインする時のパスワード(自分で決めてください)"
+      }
+    }
+  }
+}
