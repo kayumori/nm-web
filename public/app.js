@@ -1076,7 +1076,37 @@ $('#zoom-fit').addEventListener('click', fitView);
 // ============================================================
 let drag = null; // {id, startX, startY, moved, target, zone} | {pan:true,...}
 
+// 2本指の操作(iPad等)。touch-action:none でブラウザの拡大を止めているため、
+// ピンチによる拡大縮小はアプリ側で処理する
+const touchPts = new Map(); // pointerId -> {x, y}
+let pinch = null;           // {dist, mid}
+
+/** ドラッグ中の表示を元に戻す(ピンチに切り替わった時など) */
+function cancelDrag() {
+  if (!drag) return;
+  el.canvas.classList.remove('panning');
+  clearDropHints();
+  el.ghost.style.display = 'none';
+  el.layer.querySelector(`[data-id="${CSS.escape(drag.id || '')}"]`)?.classList.remove('drag-source');
+  drag = null;
+}
+
+/** 2本指の中間点(キャンバス内の座標)と指の間隔 */
+function pinchInfo() {
+  const [a, b] = [...touchPts.values()];
+  const r = canvasRect();
+  return {
+    dist: Math.hypot(a.x - b.x, a.y - b.y),
+    mid: { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top },
+  };
+}
+
 el.canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch') {
+    touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touchPts.size === 2) { cancelDrag(); pinch = pinchInfo(); return; }
+    if (touchPts.size > 2) return;
+  }
   if (e.button !== 0) return;
   // リンクアイコンはブラウザの既定動作(リンクを開く)に任せる
   if (e.target.closest('.node-link')) return;
@@ -1101,6 +1131,19 @@ el.canvas.addEventListener('pointerdown', (e) => {
 });
 
 el.canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch' && touchPts.has(e.pointerId)) {
+    touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && touchPts.size === 2) {
+      const now = pinchInfo();
+      if (pinch.dist > 0) setZoom(S.zoom * (now.dist / pinch.dist), now.mid.x, now.mid.y);
+      // 指の移動に合わせて画面もついてくる
+      S.pan.x += now.mid.x - pinch.mid.x;
+      S.pan.y += now.mid.y - pinch.mid.y;
+      applyTransform();
+      pinch = now;
+      return;
+    }
+  }
   if (!drag) return;
   if (drag.pan) {
     S.pan.x = drag.panX + (e.clientX - drag.startX);
@@ -1133,7 +1176,8 @@ el.canvas.addEventListener('pointermove', (e) => {
 el.canvas.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
 
 // 途中でブラウザに操作を取られた場合は、表示を元に戻すだけにする
-el.canvas.addEventListener('pointercancel', () => {
+el.canvas.addEventListener('pointercancel', (e) => {
+  endTouchPoint(e);
   if (!drag) return;
   el.canvas.classList.remove('panning');
   clearDropHints();
@@ -1142,7 +1186,14 @@ el.canvas.addEventListener('pointercancel', () => {
   drag = null;
 });
 
+function endTouchPoint(e) {
+  if (e.pointerType !== 'touch') return;
+  touchPts.delete(e.pointerId);
+  if (touchPts.size < 2) pinch = null;
+}
+
 el.canvas.addEventListener('pointerup', (e) => {
+  endTouchPoint(e);
   if (!drag) return;
   el.canvas.classList.remove('panning');
   clearDropHints();
@@ -1920,6 +1971,17 @@ el.files.addEventListener('contextmenu', (e) => {
 });
 
 // ---------- 複製 ----------
+/** Notionが一時的に混み合った時のために少し待って再試行する */
+async function retry(fn, tries = 4) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (i >= tries - 1) throw e;
+      await new Promise(r => setTimeout(r, 500 * (i + 1)));
+    }
+  }
+}
+
 async function copyNodeImage(origNode, newId) {
   if (!origNode.image || !origNode.image.url) return;
   try {
@@ -1934,36 +1996,51 @@ async function duplicateMap(f, parentId, newName) {
   const nodes = await api.listNodes(f.id);
   const origIds = new Set(nodes.map(n => n.id));
   const created = await api.createFile({ name: newName, kind: 'マップ', parentId });
-  const newFile = created.file;
+  let newFile = created.file;
   const autoRoot = created.root; // 自動生成される中心トピック
   const idMap = {};
+
+  // 見た目の設定(レイアウト・テーマ・背景)は新規作成時に指定できないので、作った後に引き継ぐ
+  try {
+    const r = await api.updateFile(newFile.id, { layout: f.layout, theme: f.theme, bg: f.bg });
+    if (r && r.file) newFile = r.file;
+  } catch {}
 
   // 元の中心トピック → 自動生成されたrootに対応づけ、内容を移植
   const origTitle = nodes.find(n => !n.parentId && n.x == null) || nodes.find(n => !n.parentId);
   if (origTitle && autoRoot) {
     idMap[origTitle.id] = autoRoot.id;
-    await api.updateNode(autoRoot.id, {
+    await retry(() => api.updateNode(autoRoot.id, {
       name: origTitle.name, color: origTitle.color, note: origTitle.note,
       link: origTitle.link, collapsed: origTitle.collapsed,
-    });
+    }));
     await copyNodeImage(origTitle, autoRoot.id);
   }
 
   // 残りのノードを親→子の順で作成(親の新IDが決まってから子を作る)
   const queue = nodes.filter(n => !origTitle || n.id !== origTitle.id);
-  let guard = 0;
-  while (queue.length && guard < queue.length * 50 + 100) {
-    guard++;
+  // 上限は最初のトピック数から決める。
+  // (ループ内で queue.length を使うと、処理が進むほど上限が下がって途中で打ち切られる)
+  const maxSteps = queue.length * 50 + 100;
+  let steps = 0;
+  while (queue.length && steps < maxSteps) {
+    steps++;
     const n = queue.shift();
     const hasParent = n.parentId && origIds.has(n.parentId);
     if (hasParent && !idMap[n.parentId]) { queue.push(n); continue; } // 親がまだ未作成
-    const node = await api.createNode({
+    const node = await retry(() => api.createNode({
       name: n.name, parentId: hasParent ? idMap[n.parentId] : null, fileId: newFile.id,
       order: n.order, link: n.link, color: n.color, note: n.note,
       collapsed: n.collapsed, x: n.x, y: n.y, topicType: n.topicType,
-    });
+    }));
     idMap[n.id] = node.id;
     await copyNodeImage(n, node.id);
+  }
+  // 作りきれなかった場合は黙って終わらせない(不完全なコピーだと気づけないため)
+  if (queue.length) {
+    const e = new Error(`${queue.length}件のトピックをコピーできませんでした`);
+    e.partial = true;
+    throw e;
   }
   return newFile;
 }
