@@ -21,7 +21,7 @@ const SNAPSHOT = null;   // (旧スナップショット共有の名残。常に
 const ICON = {
   link: '<svg viewBox="0 0 24 24" width="12" height="12"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   note: '<svg viewBox="0 0 24 24" width="11" height="11"><path d="M4 4h16v13H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 9h8M8 12.5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
-  clip: '<svg viewBox="0 0 24 24" width="11" height="11"><path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.6 17.3a1.6 1.6 0 0 1-2.3-2.3l7.8-7.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  file: '<svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 2.8h7.2L19 8.6V21a1.2 1.2 0 0 1-1.2 1.2H6A1.2 1.2 0 0 1 4.8 21V4A1.2 1.2 0 0 1 6 2.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13 3v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   folder: '<svg viewBox="0 0 24 24" fill="none"><path d="M3.6 7.1a1.9 1.9 0 0 1 1.9-1.9h3.9l2 2.2h7.1a1.9 1.9 0 0 1 1.9 1.9v8.8a1.9 1.9 0 0 1-1.9 1.9H5.5a1.9 1.9 0 0 1-1.9-1.9z" stroke="#1d1d1f" stroke-width="1.5"/></svg>',
   map: '<svg viewBox="0 0 24 24" fill="none"><path d="M8 12l9.5-5.5M8 12h9.5M8 12l9.5 5.5" stroke="#1d1d1f" stroke-width="1.6"/><circle cx="7.5" cy="12" r="3.1" fill="#1d1d1f"/><circle cx="17.5" cy="6.5" r="1.8" fill="#1d1d1f"/><circle cx="17.5" cy="12" r="1.8" fill="#1d1d1f"/><circle cx="17.5" cy="17.5" r="1.8" fill="#1d1d1f"/></svg>',
 };
@@ -945,9 +945,12 @@ function buildNodeDom(n) {
       row.appendChild(ind);
     }
     if (n.hasFiles) {
-      const clip = document.createElement('span');
-      clip.className = 'node-clip'; clip.innerHTML = ICON.clip; clip.title = 'ファイルが添付されています';
-      row.appendChild(clip);
+      const btn = document.createElement('button');
+      btn.className = 'node-file'; btn.innerHTML = ICON.file;
+      btn.title = '添付ファイルを開く';
+      btn.addEventListener('pointerdown', (e) => e.stopPropagation()); // ドラッグ開始を邪魔しない
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openAttachments(n.id, e.clientX, e.clientY); });
+      row.appendChild(btn);
     }
     dom.appendChild(row);
   }
@@ -1701,6 +1704,31 @@ function updateInspector() {
 }
 
 // ---------- 添付ファイル ----------
+/** 添付を開く。ダウンロードURLは期限があるので、押された時に取り直す */
+async function openAttachments(nodeId, x, y) {
+  let list = [];
+  try {
+    toast('ファイルを確認中…', 8000);
+    list = (await api.listAttachments(rid(nodeId))).attachments || [];
+  } catch { toast('ファイルを取得できませんでした'); return; }
+  if (!list.length) { toast('添付ファイルはありません'); return; }
+  toast('');
+  if (list.length === 1) { downloadAttachment(list[0]); return; }
+  showCtxMenu(x, y, list.map(f => ({ label: f.name, action: () => downloadAttachment(f) })));
+}
+
+function downloadAttachment(f) {
+  if (!f.url) { toast('このファイルは開けません'); return; }
+  const a = document.createElement('a');
+  a.href = f.url;
+  a.download = f.name || '';
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 async function renderFileList() {
   const box = $('#insp-files');
   if (!box) return;

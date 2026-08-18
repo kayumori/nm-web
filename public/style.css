@@ -440,5 +440,13 @@ body.shared #sync-status { margin-left: 0; }
   border: none; background: none; color: var(--sub); font-size: 12px; padding: 2px 4px; border-radius: 4px;
 }
 .file-row button:hover { background: #f0f0f3; color: #d33; }
-/* トピック上の添付の印 */
-.node-clip { flex: none; opacity: .75; margin-left: 2px; vertical-align: -2px; }
+/* トピック上の添付ファイル(押すとダウンロード) */
+.node-file {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; margin-left: 2px; padding: 0;
+  border: none; border-radius: 5px; background: rgba(255,255,255,.22); color: inherit;
+  cursor: pointer; opacity: .85;
+}
+.node-file:hover { background: rgba(255,255,255,.45); opacity: 1; }
+.node.white-bg .node-file, .node:not(.depth-0) .node-file { background: rgba(0,0,0,.06); }
+.node.white-bg .node-file:hover, .node:not(.depth-0) .node-file:hover { background: rgba(0,0,0,.12); }
