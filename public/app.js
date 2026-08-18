@@ -21,6 +21,7 @@ const SNAPSHOT = null;   // (旧スナップショット共有の名残。常に
 const ICON = {
   link: '<svg viewBox="0 0 24 24" width="12" height="12"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   note: '<svg viewBox="0 0 24 24" width="11" height="11"><path d="M4 4h16v13H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 9h8M8 12.5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
+  clip: '<svg viewBox="0 0 24 24" width="11" height="11"><path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.6 17.3a1.6 1.6 0 0 1-2.3-2.3l7.8-7.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   folder: '<svg viewBox="0 0 24 24" fill="none"><path d="M3.6 7.1a1.9 1.9 0 0 1 1.9-1.9h3.9l2 2.2h7.1a1.9 1.9 0 0 1 1.9 1.9v8.8a1.9 1.9 0 0 1-1.9 1.9H5.5a1.9 1.9 0 0 1-1.9-1.9z" stroke="#1d1d1f" stroke-width="1.5"/></svg>',
   map: '<svg viewBox="0 0 24 24" fill="none"><path d="M8 12l9.5-5.5M8 12h9.5M8 12l9.5 5.5" stroke="#1d1d1f" stroke-width="1.6"/><circle cx="7.5" cy="12" r="3.1" fill="#1d1d1f"/><circle cx="17.5" cy="6.5" r="1.8" fill="#1d1d1f"/><circle cx="17.5" cy="12" r="1.8" fill="#1d1d1f"/><circle cx="17.5" cy="17.5" r="1.8" fill="#1d1d1f"/></svg>',
 };
@@ -51,6 +52,22 @@ const notionBackend = {
   deleteNode: (id) => jfetch('/api/nodes/' + id, { method: 'DELETE' }),
   restoreNode: async (id) => (await jfetch('/api/nodes/' + id + '/restore', { method: 'POST' })).node,
   refreshNode: async (id) => (await jfetch('/api/nodes/' + id + '/refresh')).node,
+  listAttachments: (id) => jfetch(`/api/nodes/${id}/attachments`),
+  deleteAttachment: (id, blockId) => jfetch(`/api/nodes/${id}/attachments/${blockId}`, { method: 'DELETE' }),
+  uploadAttachment: async (id, blob, filename) => {
+    const res = await fetch(`/api/nodes/${id}/attachments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': blob.type || 'application/octet-stream',
+        'X-Filename': encodeURIComponent(filename),
+        ...(SHARE_KEY ? { 'x-share-key': SHARE_KEY } : {}),
+      },
+      body: blob,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'アップロードに失敗しました');
+    return data;
+  },
   uploadImage: async (id, blob, filename) => {
     const res = await fetch(`/api/nodes/${id}/image`, {
       method: 'POST',
@@ -114,6 +131,27 @@ const demoBackend = (() => {
     deleteNode: async (id) => { const d = load(); delete d.nodes[id]; save(d); },
     restoreNode: async (id, snap) => { const d = load(); d.nodes[id] = { ...snap }; save(d); return d.nodes[id]; },
     refreshNode: async (id) => load().nodes[id],
+    listAttachments: async (id) => {
+      const d = load();
+      return { attachments: (d.nodes[id] && d.nodes[id].attachments) || [] };
+    },
+    uploadAttachment: async (id, blob, filename) => {
+      const d = load();
+      const n = d.nodes[id];
+      n.attachments = n.attachments || [];
+      n.attachments.push({ id: 'att_' + (d.seq++), name: filename, url: URL.createObjectURL(blob) });
+      n.hasFiles = true;
+      save(d);
+      return { attachments: n.attachments };
+    },
+    deleteAttachment: async (id, blockId) => {
+      const d = load();
+      const n = d.nodes[id];
+      n.attachments = (n.attachments || []).filter(a => a.id !== blockId);
+      n.hasFiles = n.attachments.length > 0;
+      save(d);
+      return { attachments: n.attachments };
+    },
     uploadImage: (id, blob, filename) => new Promise((resolve) => {
       const r = new FileReader();
       r.onload = () => {
@@ -906,6 +944,11 @@ function buildNodeDom(n) {
       ind.className = 'node-note-ind'; ind.innerHTML = ICON.note; ind.title = n.note;
       row.appendChild(ind);
     }
+    if (n.hasFiles) {
+      const clip = document.createElement('span');
+      clip.className = 'node-clip'; clip.innerHTML = ICON.clip; clip.title = 'ファイルが添付されています';
+      row.appendChild(clip);
+    }
     dom.appendChild(row);
   }
 
@@ -1653,7 +1696,69 @@ function updateInspector() {
     b.addEventListener('click', () => { updateNode(S.sel, { color: c }); render(); updateInspector(); });
     row.appendChild(b);
   }
+  $('#insp-file-add').style.display = RO ? 'none' : '';
+  renderFileList();
 }
+
+// ---------- 添付ファイル ----------
+async function renderFileList() {
+  const box = $('#insp-files');
+  if (!box) return;
+  const id = S.sel;
+  box.innerHTML = '';
+  if (!id || api.name === 'demo' && !S.nodes.get(id)) return;
+  box.textContent = '読み込み中…';
+  let list = [];
+  try { list = (await api.listAttachments(rid(id))).attachments || []; }
+  catch { box.textContent = ''; return; }
+  if (S.sel !== id) return; // 選択が変わっていたら捨てる
+  box.innerHTML = '';
+  for (const f of list) {
+    const row = document.createElement('div');
+    row.className = 'file-row';
+    const a = document.createElement('a');
+    a.textContent = f.name;
+    a.title = f.name;
+    if (f.url) { a.href = f.url; a.target = '_blank'; a.rel = 'noopener'; a.download = f.name; }
+    row.appendChild(a);
+    if (!RO) {
+      const del = document.createElement('button');
+      del.textContent = '削除';
+      del.title = 'この添付を削除';
+      del.addEventListener('click', async () => {
+        row.remove();
+        try {
+          const r = await api.deleteAttachment(rid(id), f.id);
+          const n = S.nodes.get(id);
+          if (n) { n.hasFiles = (r.attachments || []).length > 0; render(); }
+        } catch (e) { toast('削除に失敗しました'); renderFileList(); }
+      });
+      row.appendChild(del);
+    }
+    box.appendChild(row);
+  }
+}
+
+async function attachFile(id, file) {
+  if (file.size > 19 * 1024 * 1024) { toast('ファイルは20MB以下にしてください'); return; }
+  toast('ファイルをアップロード中…', 60000);
+  try {
+    const r = await api.uploadAttachment(rid(id), file, file.name || 'file');
+    const n = S.nodes.get(id);
+    if (n) { n.hasFiles = (r.attachments || []).length > 0; render(); }
+    toast('ファイルを添付しました');
+    if (S.sel === id) renderFileList();
+  } catch (e) {
+    toast('添付に失敗しました: ' + e.message);
+  }
+}
+
+$('#insp-file-add').addEventListener('click', () => $('#attach-file').click());
+$('#attach-file').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (f && S.sel) attachFile(S.sel, f);
+  e.target.value = '';
+});
 
 let linkTimer = null;
 $('#insp-link').addEventListener('input', (e) => {
@@ -1725,11 +1830,14 @@ el.canvas.addEventListener('dragover', (e) => e.preventDefault());
 el.canvas.addEventListener('drop', (e) => {
   e.preventDefault();
   if (RO) return;
-  const f = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'));
-  if (!f) return;
+  const files = [...(e.dataTransfer.files || [])];
+  if (!files.length) return;
   const nodeDom = e.target.closest('.node');
   const id = nodeDom ? nodeDom.dataset.id : S.sel;
-  if (id) attachImage(id, f);
+  if (!id) return;
+  const img = files.find(f => f.type.startsWith('image/'));
+  if (img) { attachImage(id, img); return; }
+  attachFile(id, files[0]); // 画像以外はファイルとして添付
 });
 
 // ============================================================

@@ -122,6 +122,13 @@
         <button class="insp-btn danger" id="insp-img-del">削除</button>
       </div>
       <input type="file" id="img-file" accept="image/*" hidden>
+      <input type="file" id="attach-file" hidden>
+      <h3>ファイル</h3>
+      <div class="insp-row">
+        <button class="insp-btn" id="insp-file-add">ファイルを追加</button>
+      </div>
+      <div id="insp-files"></div>
+
       <h3>ノート</h3>
       <textarea id="insp-note" placeholder="メモを書く…"></textarea>
       <a id="insp-notion-link" href="#" target="_blank">Notionでページを開く ↗</a>
@@ -140,6 +147,7 @@
       <tr><td><kbd>⌘C</kbd> / <kbd>⌘V</kbd></td><td>トピックのコピー / 貼り付け</td></tr>
       <tr><td><kbd>⌘V</kbd></td><td>画像を貼り付け</td></tr>
       <tr><td>画像をクリック</td><td>拡大表示</td></tr>
+      <tr><td>ファイルをドロップ</td><td>トピックに添付</td></tr>
       <tr><td>ドラッグ</td><td>移動・つなぎ替え</td></tr>
       <tr><td>空きスペースへドラッグ</td><td>フローティングトピック</td></tr>
       <tr><td><kbd>⌘</kbd> + スクロール</td><td>ズーム</td></tr>

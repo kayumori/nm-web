@@ -103,6 +103,7 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
       x: (p['位置X'] && p['位置X'].number) ?? null,
       y: (p['位置Y'] && p['位置Y'].number) ?? null,
       topicType: (p['トピック種別'] && p['トピック種別'].select && p['トピック種別'].select.name) || null,
+      hasFiles: !!(p['添付'] && p['添付'].checkbox),
       image: img ? { name: img.name, url: img.file ? img.file.url : (img.external ? img.external.url : null) } : null,
       notionUrl: page.url,
     };
@@ -121,6 +122,7 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
     if ('x' in d) props['位置X'] = { number: d.x };
     if ('y' in d) props['位置Y'] = { number: d.y };
     if ('topicType' in d) props['トピック種別'] = { select: d.topicType ? { name: d.topicType } : null };
+    if ('hasFiles' in d) props['添付'] = { checkbox: !!d.hasFiles };
     if ('clearImage' in d && d.clearImage) props['画像'] = { files: [] };
     return props;
   }
@@ -337,6 +339,39 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
     sharePropsReady = true;
   }
 
+  // 添付ファイルの有無を示す列。無ければ必要になった時に作る
+  let attachPropReady = false;
+  async function ensureAttachProp() {
+    if (attachPropReady) return;
+    try {
+      const db = await notion(`/databases/${NODES_DB()}`);
+      if (!db.properties['添付']) {
+        await notion(`/databases/${NODES_DB()}`, 'PATCH', { properties: { '添付': { checkbox: {} } } });
+      }
+      attachPropReady = true;
+    } catch {}
+  }
+
+  /** トピックに添付されたファイル一覧(ページ本文のファイルブロック) */
+  async function listAttachments(nodeId) {
+    const out = [];
+    let cursor;
+    do {
+      const data = await notion(`/blocks/${nodeId}/children?page_size=100${cursor ? '&start_cursor=' + cursor : ''}`);
+      for (const b of data.results) {
+        if (b.type !== 'file') continue;
+        const f = b.file || {};
+        out.push({
+          id: b.id,
+          name: f.name || plain(f.caption) || 'ファイル',
+          url: (f.file && f.file.url) || (f.external && f.external.url) || null,
+        });
+      }
+      cursor = data.has_more ? data.next_cursor : undefined;
+    } while (cursor);
+    return out;
+  }
+
   function shareKeysOf(pg) {
     const p = pg.properties;
     return {
@@ -373,7 +408,7 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
     if (method === 'GET') {
       if (parts[1] === 'files' && parts[2] === fileId && !parts[3]) return true;
       if (parts[1] === 'nodes' && parts[2] === fileId && !parts[3]) return true;
-      if (parts[1] === 'nodes' && parts[2] && parts[3] === 'refresh') {
+      if (parts[1] === 'nodes' && parts[2] && (parts[3] === 'refresh' || parts[3] === 'attachments')) {
         return await nodeBelongsTo(parts[2], fileId);
       }
       return false;
@@ -383,7 +418,7 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
     if (parts[1] === 'files' && parts[2] === fileId && method === 'PATCH') return true;
     if (url.pathname === '/api/outline' && method === 'POST') return body && body.fileId === fileId;
     if (url.pathname === '/api/nodes' && method === 'POST') return body && body.fileId === fileId;
-    if (parts[1] === 'nodes' && parts[2] && (method === 'PATCH' || method === 'DELETE' || parts[3] === 'restore' || parts[3] === 'image')) {
+    if (parts[1] === 'nodes' && parts[2] && (method === 'PATCH' || method === 'DELETE' || parts[3] === 'restore' || parts[3] === 'image' || parts[3] === 'attachments')) {
       if (body && 'fileId' in body && body.fileId !== fileId) return false;
       return await nodeBelongsTo(parts[2], fileId);
     }
@@ -566,6 +601,45 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
       };
       await deleteFileRec(parts[2]);
       return json(200, { ok: true });
+    }
+
+    // --- 添付ファイル(トピックのNotionページ本文にファイルとして保存する) ---
+    if (parts[1] === 'nodes' && parts[2] && parts[3] === 'attachments') {
+      const nodeId = parts[2];
+      if (method === 'GET') {
+        return json(200, { attachments: await listAttachments(nodeId) });
+      }
+      if (method === 'POST') {
+        const filename = decodeURIComponent(request.headers.get('x-filename') || 'file');
+        const contentType = request.headers.get('content-type') || 'application/octet-stream';
+        const up = await notion('/file_uploads', 'POST', { mode: 'single_part', filename });
+        const fd = new FormData();
+        fd.append('file', new Blob([rawBuf], { type: contentType }), filename);
+        const upRes = await fetch(`https://api.notion.com/v1/file_uploads/${up.id}/send`, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + loadConfig().token, 'Notion-Version': NOTION_VERSION },
+          body: fd,
+        });
+        if (!upRes.ok) {
+          const d = await upRes.json().catch(() => ({}));
+          return json(502, { error: d.message || 'upload failed' });
+        }
+        await notion(`/blocks/${nodeId}/children`, 'PATCH', {
+          children: [{ object: 'block', type: 'file', file: { type: 'file_upload', file_upload: { id: up.id }, name: filename } }],
+        });
+        await ensureAttachProp();
+        try { await notion(`/pages/${nodeId}`, 'PATCH', { properties: { '添付': { checkbox: true } } }); } catch {}
+        return json(200, { attachments: await listAttachments(nodeId) });
+      }
+      if (method === 'DELETE') {
+        const blockId = parts[4] || url.searchParams.get('block');
+        if (!blockId) return json(400, { error: 'block required' });
+        await notion(`/blocks/${blockId}`, 'DELETE');
+        const rest = await listAttachments(nodeId);
+        await ensureAttachProp();
+        try { await notion(`/pages/${nodeId}`, 'PATCH', { properties: { '添付': { checkbox: rest.length > 0 } } }); } catch {}
+        return json(200, { attachments: rest });
+      }
     }
 
     // --- nodes ---

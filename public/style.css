@@ -423,3 +423,22 @@ body.shared #sync-status { margin-left: 0; }
 }
 .share-actions { display: flex; gap: 6px; }
 .share-row:not(.has-link) .share-revoke { display: none; }
+
+/* ---------- 添付ファイル ---------- */
+#insp-files { display: flex; flex-direction: column; gap: 4px; }
+#insp-files:empty { display: none; }
+.file-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+}
+.file-row a {
+  flex: 1; min-width: 0; color: var(--text); text-decoration: none; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-row a:hover { text-decoration: underline; }
+.file-row button {
+  border: none; background: none; color: var(--sub); font-size: 12px; padding: 2px 4px; border-radius: 4px;
+}
+.file-row button:hover { background: #f0f0f3; color: #d33; }
+/* トピック上の添付の印 */
+.node-clip { flex: none; opacity: .75; margin-left: 2px; vertical-align: -2px; }
