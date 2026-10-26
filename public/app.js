@@ -444,6 +444,7 @@ const S = {
   queue: [], syncing: false, syncError: false,
   idMap: {},             // tempId -> realId
   tmpSeq: 0,
+  opSeq: 0,              // 保存操作を積んだ回数(外からの変更の取り込みで使う)
   geo: new Map(),        // id -> {x, y(=centerY), w, h, side, depth, color}
 };
 
@@ -490,6 +491,7 @@ function scheduleOutlineSync() {
 
 function enqueue(op) {
   if (RO) return; // 閲覧専用では保存しない
+  S.opSeq++; // 外からの変更の取り込みと、手元の編集がぶつからないようにする目印
   S.queue.push(op);
   if (NODE_OPS.has(op.type)) scheduleOutlineSync();
   processQueue();
@@ -743,6 +745,97 @@ function deleteNode(id) {
   render();
   updateInspector();
 }
+
+// ---------- 外からの変更の取り込み ----------
+// 別の画面・共有リンクの相手・Notion側で変わった内容を、開いている画面に反映する。
+// 画面に戻ってきた時と、表示中は30秒ごとに読み直す。
+// 手元の保存待ち・文字入力中・ドラッグ中は読まない(手元の編集を上書きしないため)。
+const REMOTE_INTERVAL = 30000;
+const REMOTE_KEYS = ['name', 'link', 'parentId', 'order', 'collapsed', 'color', 'note', 'x', 'y', 'topicType', 'hasFiles'];
+let remoteBusy = false;
+
+function canPullRemote() {
+  return !!S.file && !SNAPSHOT && !DEMO && document.visibilityState === 'visible'
+    && el.editor.classList.contains('active')
+    && !S.editing && !drag && S.queue.length === 0 && !S.syncing;
+}
+
+async function pullRemote() {
+  if (remoteBusy || !canPullRemote()) return;
+  remoteBusy = true;
+  const fileId = S.file.id;
+  const seq = S.opSeq;
+  try {
+    const [nodes, file] = await Promise.all([
+      api.listNodes(fileId),
+      api.getFile(fileId).catch(() => null),
+    ]);
+    // 読んでいる間に手元で編集が始まったら、今回の結果は捨てる
+    if (!S.file || S.file.id !== fileId || S.opSeq !== seq || !canPullRemote()) return;
+    const fileChanged = applyRemoteFile(file);
+    if (applyRemoteNodes(nodes) || fileChanged) { render(); updateInspector(); }
+  } catch {
+    // 通信できない時は次の機会に読み直す
+  } finally {
+    remoteBusy = false;
+  }
+}
+
+function applyRemoteFile(f) {
+  if (!f) return false;
+  let changed = false;
+  for (const k of ['layout', 'theme', 'bg']) {
+    if (f[k] && S.file[k] !== f[k]) { S.file[k] = f[k]; changed = true; }
+  }
+  if (changed) applyBg();
+  if (f.name != null && f.name !== S.file.name && document.activeElement !== el.title) {
+    S.file.name = f.name;
+    el.title.value = f.name;
+  }
+  return changed;
+}
+
+/** Notionの最新の状態を手元に合わせる。変わったところがあれば true */
+function applyRemoteNodes(list) {
+  // 読み込み時と同じく、親が消されて残ったトピックは対象外
+  const main = pickMainRoot(list);
+  const kids = new Map();
+  for (const n of list) {
+    if (!n.parentId) continue;
+    if (!kids.has(n.parentId)) kids.set(n.parentId, []);
+    kids.get(n.parentId).push(n);
+  }
+  const drop = new Set();
+  const dropTree = (id) => { drop.add(id); for (const c of kids.get(id) || []) dropTree(c.id); };
+  for (const n of list) {
+    if (!n.parentId && n.x == null && main && n.id !== main.id) dropTree(n.id);
+  }
+  const remote = new Map(list.filter(n => !drop.has(n.id)).map(n => [n.id, n]));
+
+  let changed = false;
+  for (const id of [...S.nodes.keys()]) {
+    if (isTemp(id) || remote.has(id)) continue;
+    S.nodes.delete(id); S.geo.delete(id); changed = true; // 他で削除された
+  }
+  for (const r of remote.values()) {
+    const cur = S.nodes.get(r.id);
+    if (!cur) { S.nodes.set(r.id, r); changed = true; continue; } // 他で追加された
+    for (const k of REMOTE_KEYS) {
+      if ((cur[k] ?? null) !== (r[k] ?? null)) { cur[k] = r[k]; changed = true; }
+    }
+    // 画像のURLは読むたびに変わるので、ファイル名が同じなら手元のものを使い続ける(ちらつき防止)
+    if ((cur.image && cur.image.name) !== (r.image && r.image.name)) { cur.image = r.image; changed = true; }
+  }
+  for (const n of S.nodes.values()) {
+    if (n.parentId && !S.nodes.has(n.parentId)) { n.parentId = null; if (n.x == null) { n.x = 300; n.y = 300; } }
+  }
+  if (S.sel && !S.nodes.has(S.sel)) S.sel = (mainRoot() && mainRoot().id) || null;
+  return changed;
+}
+
+setInterval(pullRemote, REMOTE_INTERVAL);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pullRemote(); });
+window.addEventListener('focus', pullRemote);
 
 // ---------- トピックのコピー & 貼り付け (⌘C / ⌘V) ----------
 let CLIP = null;
