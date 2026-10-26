@@ -1999,6 +1999,37 @@ let filesAll = [];
 let curFolder = null;   // 現在開いているフォルダのid (null=トップ)
 let suppressOpen = false;
 
+// ---------- 今いる場所をURLに残す(再読み込みしても同じ画面に戻る) ----------
+// 開いているマップは #map=<id>、一覧で開いているフォルダは #folder=<id>。
+// 共有リンク(?s=)は開くマップが決まっているので残さない
+function saveLocation() {
+  if (SHARE_KEY) return;
+  let hash = '';
+  if (el.editor.classList.contains('active') && S.file) hash = '#map=' + S.file.id;
+  else if (curFolder) hash = '#folder=' + curFolder;
+  if (location.hash !== hash) history.replaceState(null, '', location.pathname + location.search + hash);
+}
+function readLocation() {
+  const m = /^#(map|folder)=([0-9a-f-]+)$/i.exec(location.hash);
+  return m ? { kind: m[1], id: m[2] } : null;
+}
+/** 起動時に前回の場所(マップかフォルダ)へ戻る。無ければ一覧のトップ */
+async function openStartScreen() {
+  const loc = readLocation();
+  if (loc && loc.kind === 'map') {
+    try {
+      const f = await api.getFile(loc.id);
+      if (f && f.kind !== 'フォルダ') {
+        curFolder = f.parentId || null; // 一覧に戻った時はこのマップがあるフォルダを開く
+        openEditor(f);
+        return;
+      }
+    } catch {}
+  }
+  if (loc && loc.kind === 'folder') curFolder = loc.id;
+  openFilesScreen();
+}
+
 async function openFilesScreen(refresh = true) {
   showScreen('files');
   if (refresh) {
@@ -2038,6 +2069,7 @@ function renderBreadcrumb() {
 }
 
 function renderFiles() {
+  saveLocation();
   renderBreadcrumb();
   el.grid.innerHTML = '';
   const items = filesAll.filter(f => (f.parentId || null) === curFolder);
@@ -2434,6 +2466,7 @@ async function openEditor(file) {
   $('#btn-panel').classList.toggle('active', S.inspOpen);
   applyBg();
   showScreen('editor');
+  saveLocation();
   el.layer.innerHTML = '';
   el.edges.innerHTML = '';
   toast('読み込み中…', 8000);
@@ -2680,7 +2713,7 @@ $('#btn-share').addEventListener('click', openShareDialog);
       }
       return;
     }
-    openFilesScreen();
+    openStartScreen();
   } catch (e) {
     // 公開URLでログインしていない場合
     if (e.status === 401) { showLogin(); return; }
