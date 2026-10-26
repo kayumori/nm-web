@@ -312,8 +312,9 @@ const extBackend = (() => {
       }
       for (const list of byParent.values()) list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       const roots = byParent.get('root') || [];
-      const main = roots.find(r => r.x == null) || roots[0];
-      const top = [...(main ? (byParent.get(main.id) || []) : []), ...roots.filter(r => r !== main)];
+      const main = pickMainRoot(nodes);
+      // 位置を持たない親なしトピックは、親が消されて残ったもの。書き出さない
+      const top = [...(main ? (byParent.get(main.id) || []) : []), ...roots.filter(r => r !== main && r.x != null)];
       const toBlock = (n) => ({
         object: 'block',
         type: 'bulleted_list_item',
@@ -386,7 +387,18 @@ const extBackend = (() => {
     listNodes: async (fileId) => (await queryAll(NODES_DB(), { property: 'ファイル', relation: { contains: fileId } })).map(parseNode),
     createNode: async (data) => parseNode(await nf('/pages', 'POST', { parent: { database_id: NODES_DB() }, properties: nodeProps(data) })),
     updateNode: async (id, data) => parseNode(await nf(`/pages/${id}`, 'PATCH', { properties: nodeProps(data) })),
-    deleteNode: async (id) => { await nf(`/pages/${id}`, 'PATCH', { archived: true }); },
+    deleteNode: async (id) => {
+      // 子孫もNotion側で探してまとめてアーカイブする(画面が知らない子が親なしで残らないように)
+      const seen = new Set();
+      const archiveTree = async (nid) => {
+        if (seen.has(nid)) return;
+        seen.add(nid);
+        const kids = await queryAll(NODES_DB(), { property: '親ノード', relation: { contains: nid } });
+        for (const k of kids) await archiveTree(k.id);
+        await nf(`/pages/${nid}`, 'PATCH', { archived: true });
+      };
+      await archiveTree(id);
+    },
     restoreNode: async (id) => parseNode(await nf(`/pages/${id}`, 'PATCH', { archived: false })),
     refreshNode: async (id) => parseNode(await nf('/pages/' + id)),
     uploadImage: async (id, blob, filename) => {
@@ -583,6 +595,20 @@ function roots() {
 function mainRoot() {
   const rs = roots();
   return rs.find(r => r.x == null) || rs[0] || null;
+}
+/** 中心トピック = 位置を持たない親なしトピックのうち、子孫がいちばん多いもの(nodes は配列) */
+function pickMainRoot(nodes) {
+  const byParent = new Map();
+  for (const n of nodes) {
+    const k = n.parentId || 'root';
+    if (!byParent.has(k)) byParent.set(k, []);
+    byParent.get(k).push(n);
+  }
+  const size = (id) => (byParent.get(id) || []).reduce((a, c) => a + 1 + size(c.id), 0);
+  const rs = byParent.get('root') || [];
+  const cands = rs.filter(r => r.x == null);
+  if (!cands.length) return rs[0] || null;
+  return cands.reduce((best, r) => (size(r.id) > size(best.id) ? r : best));
 }
 function floatingRoots() {
   const m = mainRoot();
@@ -2320,6 +2346,14 @@ async function openEditor(file) {
       nodes = [root];
     }
     for (const n of nodes) S.nodes.set(n.id, n);
+    // 位置を持たない親なしトピックが中心以外にもある = 親が消されて残ったもの。
+    // 中心と取り違えたり同じ場所に重なったりするので、表示しない
+    const main = pickMainRoot(nodes);
+    for (const n of nodes) {
+      if (!n.parentId && n.x == null && main && n.id !== main.id && S.nodes.has(n.id)) {
+        for (const i of subtreeIds(n.id)) S.nodes.delete(i);
+      }
+    }
     // 孤児ノード(親が消えている)はフローティング扱い
     for (const n of S.nodes.values()) {
       if (n.parentId && !S.nodes.has(n.parentId)) { n.parentId = null; if (n.x == null) { n.x = 300; n.y = 300; } }

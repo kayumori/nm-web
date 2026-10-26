@@ -198,6 +198,14 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
   }
 
   // ---------- アウトライン同期 ----------
+  /** 中心トピック = 位置を持たない親なしトピックのうち、子孫がいちばん多いもの */
+  function pickMainRoot(roots, byParent) {
+    const size = (id) => (byParent.get(id) || []).reduce((a, c) => a + 1 + size(c.id), 0);
+    const cands = roots.filter(r => r.x == null);
+    if (!cands.length) return roots[0] || null;
+    return cands.reduce((best, r) => (size(r.id) > size(best.id) ? r : best));
+  }
+
   async function syncOutline(fileId) {
     const nodePages = await queryAll(NODES_DB(), { property: 'ファイル', relation: { contains: fileId } });
     const nodes = nodePages.map(parseNode);
@@ -219,8 +227,9 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
     }
     for (const list of byParent.values()) list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     const roots = byParent.get('root') || [];
-    const main = roots.find(r => r.x == null) || roots[0];
-    const top = [...(main ? (byParent.get(main.id) || []) : []), ...roots.filter(r => r !== main)];
+    const main = pickMainRoot(roots, byParent);
+    // 位置を持たない親なしトピックは、親が消されて残ったもの。書き出さない
+    const top = [...(main ? (byParent.get(main.id) || []) : []), ...roots.filter(r => r !== main && r.x != null)];
 
     const toBlock = (n) => ({
       object: 'block',
@@ -679,7 +688,17 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
       return json(200, { node: parseNode(pg) });
     }
     if (parts[1] === 'nodes' && parts[2] && !parts[3] && method === 'DELETE') {
-      await notion(`/pages/${parts[2]}`, 'PATCH', { archived: true });
+      // 子孫もNotion側で探してまとめてアーカイブする。
+      // (画面を開いた後に別の場所で足された子は画面が知らないので、親だけ消えて取り残されるのを防ぐ)
+      const seen = new Set();
+      const archiveTree = async (id) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        const kids = await queryAll(NODES_DB(), { property: '親ノード', relation: { contains: id } });
+        for (const k of kids) await archiveTree(k.id);
+        await notion(`/pages/${id}`, 'PATCH', { archived: true });
+      };
+      await archiveTree(parts[2]);
       return json(200, { ok: true });
     }
     if (parts[1] === 'nodes' && parts[2] && parts[3] === 'refresh' && method === 'GET') {
