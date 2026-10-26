@@ -82,6 +82,9 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
     return data;
   }
 
+  /** すでにアーカイブ済み・存在しないページへの操作で起きたエラーか */
+  const isGone = (e) => e && (e.status === 404 || (e.status === 400 && /archived/i.test(e.message || '')));
+
   // ---------- property helpers ----------
   const plain = (arr) => (arr || []).map(t => t.plain_text).join('');
   const titleProp = (s) => ({ title: [{ text: { content: s || '' } }] });
@@ -684,8 +687,14 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
       return json(200, { node: parseNode(pg) });
     }
     if (parts[1] === 'nodes' && parts[2] && !parts[3] && method === 'PATCH') {
-      const pg = await notion(`/pages/${parts[2]}`, 'PATCH', { properties: nodeProps(body || {}) });
-      return json(200, { node: parseNode(pg) });
+      try {
+        const pg = await notion(`/pages/${parts[2]}`, 'PATCH', { properties: nodeProps(body || {}) });
+        return json(200, { node: parseNode(pg) });
+      } catch (e) {
+        // 別の画面やNotion側で消されたトピックへの変更。失敗のままだと保存の列が止まるので、済んだ扱いにする
+        if (isGone(e)) return json(200, { node: null, gone: true });
+        throw e;
+      }
     }
     if (parts[1] === 'nodes' && parts[2] && !parts[3] && method === 'DELETE') {
       // 子孫もNotion側で探してまとめてアーカイブする。
@@ -696,7 +705,11 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
         seen.add(id);
         const kids = await queryAll(NODES_DB(), { property: '親ノード', relation: { contains: id } });
         for (const k of kids) await archiveTree(k.id);
-        await notion(`/pages/${id}`, 'PATCH', { archived: true });
+        try {
+          await notion(`/pages/${id}`, 'PATCH', { archived: true });
+        } catch (e) {
+          if (!isGone(e)) throw e; // すでに消えていれば目的は達成済み
+        }
       };
       await archiveTree(parts[2]);
       return json(200, { ok: true });
@@ -718,7 +731,9 @@ export function createApi({ env = {}, store = {}, mode = 'hosted' } = {}) {
     try {
       return await handleApi(request);
     } catch (e) {
-      return json(e.status === 401 ? 401 : 500, { error: e.message, code: e.code });
+      // Notionが「リクエストが不正」と返したもの(400/404)はそのまま返し、画面側で再試行をやめられるようにする
+      const status = e.status === 401 || e.status === 400 || e.status === 404 ? e.status : 500;
+      return json(status, { error: e.message, code: e.code });
     }
   }
 

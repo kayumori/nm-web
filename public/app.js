@@ -508,6 +508,11 @@ async function processQueue() {
       S.syncError = false;
     } catch (e) {
       console.error('sync error', op, e);
+      // 何度やっても通らない失敗(消されたトピックへの変更など)で、後ろの保存まで止めない
+      if (e && (e.status === 400 || e.status === 403 || e.status === 404)) {
+        S.queue.shift();
+        continue;
+      }
       S.syncError = true;
       setSyncUI('error');
       S.syncing = false;
